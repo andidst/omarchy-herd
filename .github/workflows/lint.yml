@@ -1,0 +1,21 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: shellcheck -x bin/omarchy-herd lib/*.sh setup/*.sh install.sh
+      - name: PHP syntax
+        run: for f in dashboard/*.php; do php -l "$f"; done
+      - name: JSON
+        run: |
+          jq empty plugin/manifest.json plugin/sample-status.json

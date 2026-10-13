@@ -75,6 +75,13 @@ trust_ca_for_browsers() {
 }
 
 cmd_setup() {
+  local force_system=""
+  case ${1:-} in
+  --system) force_system=1 ;;
+  "") ;;
+  *) die "usage: omarchy-herd setup [--system]" ;;
+  esac
+
   config_init
 
   # Serve the dashboard, and park ~/Work the first time.
@@ -88,7 +95,7 @@ cmd_setup() {
   write_php_shim
   add_shell_path
 
-  if system_setup_needed; then
+  if [[ -n $force_system ]] || system_setup_needed; then
     sites_apply
     run_system_setup || die "system setup didn't finish"
   fi
@@ -185,5 +192,10 @@ cmd_doctor() {
   for series in $(php_installed_series); do
     check "PHP $series FPM running" user_unit_active "omarchy-herd-php@$series"
   done
-  ((failures == 0)) && echo "All good." || { echo "$failures problem(s) found."; return 1; }
+  if ((failures == 0)); then
+    echo "All good."
+  else
+    echo "$failures problem(s) found."
+    return 1
+  fi
 }

@@ -25,6 +25,32 @@ done
 
 pacman -S --needed --noconfirm caddy dnsmasq mariadb postgresql valkey jq
 
+data_dir=${run_dir%/run}
+caddy_data=${ca_root%/pki/authorities/local/root.crt}
+[[ $data_dir != "$run_dir" && $caddy_data != "$ca_root" ]] || { echo "unexpected directory layout" >&2; exit 1; }
+install -d -o "$user" -g "$(id -gn "$user")" -m 700 "$run_dir" "$data_dir/log" "$caddy_data" "$home/.config/caddy"
+
+# Shared sandbox for both services: read-only OS, no devices, kernel knobs or new privileges.
+sandbox='NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE'
+
 install -d -m 755 /etc/omarchy-herd
 cat >/etc/omarchy-herd/dnsmasq.conf <<'EOF'
 # omarchy-herd: answer every *.test name with this machine. Nothing else.
@@ -35,25 +61,29 @@ no-resolv
 no-hosts
 no-poll
 pid-file=
-user=dnsmasq
-group=dnsmasq
 address=/test/127.0.0.1
 address=/test/::1
 EOF
 
-cat >/etc/systemd/system/omarchy-herd-dns.service <<'EOF'
+cat >/etc/systemd/system/omarchy-herd-dns.service <<EOF
 [Unit]
 Description=omarchy-herd .test DNS (dnsmasq)
 After=network.target
 
 [Service]
+User=dnsmasq
+Group=dnsmasq
 ExecStart=/usr/bin/dnsmasq --keep-in-foreground --conf-file=/etc/omarchy-herd/dnsmasq.conf
 Restart=on-failure
+ProtectHome=true
+$sandbox
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+# Caddy runs as you so it can read your projects and reach PHP-FPM's sockets.
+# It can only write its certificates, the log folder and the socket folder.
 cat >/etc/systemd/system/omarchy-herd-caddy.service <<EOF
 [Unit]
 Description=omarchy-herd web server (Caddy)
@@ -63,24 +93,29 @@ After=network.target
 Type=notify
 User=$user
 Group=$(id -gn "$user")
-ExecStartPre=/usr/bin/mkdir -p $run_dir
+Environment=XDG_DATA_HOME=${caddy_data%/caddy}
 ExecStart=/usr/bin/caddy run --config $caddyfile --adapter caddyfile
 ExecReload=/usr/bin/caddy reload --config $caddyfile --adapter caddyfile --address unix/$run_dir/caddy-admin.sock
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
+ReadWritePaths=$caddy_data $run_dir $data_dir/log $home/.config/caddy
 Restart=on-failure
 TimeoutStopSec=5s
 LimitNOFILE=1048576
+$sandbox
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now omarchy-herd-dns.service
-systemctl enable omarchy-herd-caddy.service
-systemctl restart omarchy-herd-caddy.service
+for unit in omarchy-herd-dns omarchy-herd-caddy; do
+  systemctl enable "$unit.service" >/dev/null 2>&1
+  systemctl restart "$unit.service"
+  systemctl is-active --quiet "$unit.service" || {
+    journalctl -u "$unit.service" -n 20 --no-pager >&2
+    echo "$unit failed to start" >&2
+    exit 1
+  }
+done
 
 # Caddy creates its local CA on first start.
 for _ in {1..40}; do

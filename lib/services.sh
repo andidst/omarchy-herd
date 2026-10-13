@@ -172,7 +172,10 @@ SQL
 service_targets() {
   local target=${1:-}
   case $target in
-  all | "") printf '%s\n' "${HERD_SERVICES[@]}" $(php_installed_series | sed 's/^/php-/') ;;
+  all | "")
+    printf '%s\n' "${HERD_SERVICES[@]}"
+    php_installed_series | sed 's/^/php-/'
+    ;;
   databases | dbs) printf '%s\n' "${HERD_SERVICES[@]}" ;;
   mariadb | mysql) echo mariadb ;;
   postgres | postgresql | pgsql) echo postgres ;;

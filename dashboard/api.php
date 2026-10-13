@@ -11,6 +11,7 @@ const HOST = 'herd.test';
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
+header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
 
 function respond(array|string $payload, int $status = 200): never
 {
@@ -73,6 +74,11 @@ const PATH_RE = '/^\/[^"\n\\\\{}]*$/';
 $host = strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]);
 if ($host !== HOST) {
     fail('wrong host', 403);
+}
+// Browsers label every request with where it came from; only accept the dashboard itself.
+$fetchSite = $_SERVER['HTTP_SEC_FETCH_SITE'] ?? null;
+if ($fetchSite !== null && ! in_array($fetchSite, ['same-origin', 'none'], true)) {
+    fail('cross-site requests are not allowed', 403);
 }
 $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
 if ($origin !== null && ! in_array($origin, ['https://' . HOST, 'http://' . HOST], true)) {

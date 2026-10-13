@@ -19,6 +19,14 @@ $css = '';
 foreach ($theme as $key => $value) {
     $css .= '--' . str_replace('_', '-', $key) . ':' . $value . ';';
 }
+
+// Only this page's own inline script and styles may run, and nobody may frame it.
+$nonce = base64_encode(random_bytes(16));
+header("Content-Security-Policy: default-src 'none'; script-src 'nonce-$nonce'; style-src 'nonce-$nonce'; "
+    . "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: no-referrer');
+header('X-Content-Type-Options: nosniff');
 ?>
 <!doctype html>
 <html lang="en">
@@ -26,7 +34,7 @@ foreach ($theme as $key => $value) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Herd</title>
-<style>
+<style nonce="<?= $nonce ?>">
 :root { <?= $css ?> color-scheme: <?= $theme['mode'] === 'light' ? 'light' : 'dark' ?>; }
 * { box-sizing: border-box; }
 body {
@@ -117,6 +125,8 @@ form.add input[name=target] { flex: 0 1 140px; }
 .hint { color: var(--dark-foreground); font-size: 12px; margin: 6px 0 0; }
 .parked { display: flex; flex-wrap: wrap; gap: 8px; }
 .empty { padding: 20px; text-align: center; color: var(--dark-foreground); }
+button.btn.tiny { padding: 0 6px; }
+.copyable { cursor: copy; }
 
 #toast {
   position: fixed; right: 16px; bottom: 16px; max-width: min(460px, calc(100vw - 32px));
@@ -189,7 +199,7 @@ form.add input[name=target] { flex: 0 1 140px; }
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 
-<script>
+<script nonce="<?= $nonce ?>">
 const state = { status: null, phpAvailable: null, nodeAvailable: null, busy: false };
 const $ = (sel) => document.querySelector(sel);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -278,7 +288,7 @@ function renderSites(s) {
 
   $('#parked').innerHTML = s.parked.length ? s.parked.map((dir) => `
     <span class="chip">${esc(dir.replace(/^\/home\/[^/]+/, '~'))}
-      <button class="btn danger" style="padding:0 6px" title="Unpark" data-run='${esc(JSON.stringify({ action: 'unpark', path: dir }))}'>×</button>
+      <button class="btn danger tiny" title="Unpark" data-run='${esc(JSON.stringify({ action: 'unpark', path: dir }))}'>×</button>
     </span>`).join('') : '<span class="meta">None. Park a folder above and every project inside gets its own .test domain.</span>';
 }
 
@@ -301,7 +311,7 @@ function renderPhp(s) {
       <div class="card-head"><span class="dot ${v.running ? 'on' : 'off'}"></span><strong>PHP ${esc(v.version)}</strong>
         ${v.default ? '<span class="badge accent">default</span>' : ''}</div>
       <div class="meta">${esc(v.patch)} · ${sites} site${sites === 1 ? '' : 's'} ${update}</div>
-      <div class="meta" data-copy="${esc(v.ini)}" style="cursor:copy" title="Click to copy">php.ini: ${esc(v.ini.replace(/^\/home\/[^/]+/, '~'))}</div>
+      <div class="meta copyable" data-copy="${esc(v.ini)}" title="Click to copy">php.ini: ${esc(v.ini.replace(/^\/home\/[^/]+/, '~'))}</div>
       <div class="row">
         ${v.default ? '' : `<button class="btn" data-run='${esc(JSON.stringify({ action: 'php-default', version: v.version }))}'>Make default</button>`}
         <button class="btn" data-run='${esc(JSON.stringify({ action: v.running ? 'restart' : 'start', service: 'php-' + v.version }))}'>${v.running ? 'Restart' : 'Start'}</button>

@@ -11,6 +11,7 @@ source "$HERD_ROOT/lib/php.sh"
 source "$HERD_ROOT/lib/node.sh"
 source "$HERD_ROOT/lib/services.sh"
 source "$HERD_ROOT/lib/setup.sh"
+source "$HERD_ROOT/lib/uninstall.sh"
 
 usage() {
   cat <<EOF
@@ -51,7 +52,9 @@ Databases and services
   logs <svc|site>            Follow a log
 
 Setup
-  setup                      First-time setup (asks for your password once)
+  setup [--system]           First-time setup (asks for your password once);
+                             --system re-applies the root-owned parts
+  uninstall [--purge]        Remove omarchy-herd; --purge also deletes databases and PHP builds
   status                     Everything at a glance
   doctor                     Check that every piece works
   dashboard                  Open the dashboard at https://herd.test
@@ -74,6 +77,7 @@ main() {
   help | -h | --help) usage; return ;;
   version | --version) echo "$HERD_VERSION"; return ;;
   setup) cmd_setup "$@"; return ;;
+  uninstall) cmd_uninstall "$@"; return ;;
   esac
 
   [[ -f $HERD_CONFIG ]] || die "not set up yet; run: omarchy-herd setup"
@@ -83,7 +87,7 @@ main() {
   case $command in
   php) [[ ${1:-list} =~ ^(list|ls|available|which)$ ]] || take_lock ;;
   node) [[ ${1:-list} =~ ^(list|ls|available)$ ]] || take_lock ;;
-  park | unpark | link | unlink | proxy | unproxy | isolate | unisolate | start | stop | restart) take_lock ;;
+  park | unpark | link | unlink | proxy | unproxy | isolate | unisolate | start | stop | restart | apply) take_lock ;;
   esac
 
   case $command in

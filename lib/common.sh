@@ -115,9 +115,19 @@ valid_php_series() {
   return 1
 }
 
-# Paths end up inside the generated Caddyfile, so keep them to safe characters.
+# Paths end up inside the generated Caddyfile and php-map, so keep them to safe characters.
 valid_path() {
-  [[ $1 == /* && $1 != *[\"$'\n'\\{}]* ]]
+  local unsafe='["\{}[:cntrl:]]'
+  [[ $1 == /* && ! $1 =~ $unsafe ]]
+}
+
+# Folders that may be served as sites. Refuses / and $HOME (which would publish every
+# folder in it) and hidden folders such as ~/.ssh or ~/.config.
+servable_dir() {
+  local dir=$1
+  valid_path "$dir" || die "unsupported characters in $dir"
+  [[ $dir != / && $dir != "$HOME" ]] || die "refusing to serve $dir; pick the folder that holds your projects"
+  [[ $dir != */.* ]] || die "refusing to serve hidden folder $dir"
 }
 
 user_unit_active() {
@@ -126,6 +136,15 @@ user_unit_active() {
 
 system_unit_active() {
   systemctl is-active --quiet "$1"
+}
+
+wait_for_socket() {
+  local i
+  for i in {1..50}; do
+    [[ -S $1 ]] && return 0
+    sleep 0.1
+  done
+  return 1
 }
 
 json_bool() {

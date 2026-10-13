@@ -1,0 +1,6 @@
+# lib/*.sh are sourced by bin/omarchy-herd, so their globals look unused in isolation.
+disable=SC2034
+# jq filters and other literal programs are single-quoted on purpose.
+disable=SC2016
+external-sources=true
+shell=bash

@@ -178,6 +178,41 @@ EOF
   } >"$HERD_ETC/php-map"
 
   caddy_reload
+  watch_apply
+}
+
+# A systemd path unit re-runs `apply` when a folder appears in or leaves a parked
+# directory, so a freshly cloned project gets its .test domain without any command.
+watch_apply() {
+  local path_unit="$HERD_UNIT_DIR/omarchy-herd-watch.path" dir watched=() content
+  while IFS= read -r dir; do
+    [[ -d $dir ]] && watched+=("PathChanged=${dir//%/%%}")
+  done < <(jq -r '.parked[]' "$HERD_CONFIG")
+
+  if ((${#watched[@]} == 0)); then
+    [[ -f $path_unit ]] || return 0
+    systemctl --user disable --now omarchy-herd-watch.path >/dev/null 2>&1 || true
+    rm -f "$path_unit" "$HERD_UNIT_DIR/omarchy-herd-watch.service"
+    systemctl --user daemon-reload
+    return 0
+  fi
+
+  content=$(printf '%s\n' "[Unit]" "Description=omarchy-herd: notice new folders in parked directories" "" "[Path]" \
+    "${watched[@]}" "Unit=omarchy-herd-watch.service" "" "[Install]" "WantedBy=default.target")
+  [[ -f $path_unit && $(<"$path_unit") == "$content" ]] && return 0
+
+  printf '%s\n' "$content" >"$path_unit"
+  cat >"$HERD_UNIT_DIR/omarchy-herd-watch.service" <<EOF
+[Unit]
+Description=omarchy-herd: refresh sites after parked folders change
+
+[Service]
+Type=oneshot
+ExecStart="${HERD_ROOT//%/%%}/bin/omarchy-herd" apply
+EOF
+  systemctl --user daemon-reload
+  systemctl --user enable omarchy-herd-watch.path >/dev/null 2>&1
+  systemctl --user restart omarchy-herd-watch.path
 }
 
 caddy_reload() {
@@ -190,7 +225,7 @@ cmd_park() {
   local dir
   dir=$(readlink -f -- "${1:-$PWD}")
   [[ -d $dir ]] || die "$dir isn't a folder"
-  valid_path "$dir" || die "unsupported characters in $dir"
+  servable_dir "$dir"
   config_update --arg dir "$dir" '.parked = (.parked + [$dir] | unique)'
   sites_apply
   ok "Parked $dir: every folder inside is now <folder>.$(tld)"
@@ -208,7 +243,7 @@ cmd_link() {
   local name=${1:-} dir
   dir=$(readlink -f -- "${2:-$PWD}")
   [[ -d $dir ]] || die "$dir isn't a folder"
-  valid_path "$dir" || die "unsupported characters in $dir"
+  servable_dir "$dir"
   name=$(slugify "${name:-${dir##*/}}")
   valid_site_name "$name" || die "'$name' isn't a valid site name"
   config_update --arg name "$name" --arg dir "$dir" '.links[$name] = $dir | del(.proxies[$name])'

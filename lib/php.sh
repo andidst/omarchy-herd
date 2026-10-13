@@ -4,7 +4,7 @@
 php_index() {
   local cache="$HERD_CACHE/php-index.json"
   if [[ ! -s $cache || -n $(find "$cache" -mmin +360 2>/dev/null) ]]; then
-    curl -fsSL --max-time 30 "$HERD_PHP_MIRROR/?format=json" -o "$cache.tmp" ||
+    curl -fsSL --proto =https --tlsv1.2 --max-time 30 "$HERD_PHP_MIRROR/?format=json" -o "$cache.tmp" ||
       { [[ -s $cache ]] || die "couldn't reach $HERD_PHP_MIRROR"; }
     [[ -s $cache.tmp ]] && mv "$cache.tmp" "$cache"
   fi
@@ -100,24 +100,34 @@ EOF
 }
 
 php_download() {
-  local series=$1 patch=$2 tmp sapi
+  local series=$1 patch=$2 tmp sapi binary progress=(--progress-bar)
+  [[ -n $HERD_JSON ]] && progress=(-sS)
   tmp=$(mktemp -d)
   # Clear the trap as it fires: a RETURN trap otherwise leaks into the caller and runs again.
   trap 'rm -rf -- "$tmp"; trap - RETURN' RETURN
 
   for sapi in cli fpm; do
+    binary=php
+    [[ $sapi == fpm ]] && binary=php-fpm
     info "Downloading PHP $patch ($sapi)…"
-    curl -fL --max-time 600 $([[ -n $HERD_JSON ]] && echo -sS || echo --progress-bar) \
+    curl -fL --proto =https --tlsv1.2 --max-time 600 "${progress[@]}" \
       "$HERD_PHP_MIRROR/php-$patch-$sapi-linux-x86_64.tar.gz" -o "$tmp/$sapi.tar.gz" ||
       die "download of PHP $patch ($sapi) failed"
-    tar -xzf "$tmp/$sapi.tar.gz" -C "$tmp" || die "couldn't unpack PHP $patch ($sapi)"
+    # Extract only the one binary we expect, nothing else the archive might carry.
+    tar -xzf "$tmp/$sapi.tar.gz" -C "$tmp" --no-same-owner -- "$binary" ||
+      die "couldn't unpack PHP $patch ($sapi)"
   done
 
-  [[ -x $tmp/php && -x $tmp/php-fpm ]] || die "PHP $patch archive is missing php or php-fpm"
+  [[ -f $tmp/php && -f $tmp/php-fpm && ! -L $tmp/php && ! -L $tmp/php-fpm ]] ||
+    die "PHP $patch archive is missing php or php-fpm"
+  chmod 755 "$tmp/php" "$tmp/php-fpm"
   "$tmp/php" -n -r 'exit(0);' || die "PHP $patch doesn't run on this machine"
 
+  # static-php-cli publishes no checksums, so record what we installed for later auditing.
+  (cd "$tmp" && sha256sum php php-fpm >SHA256SUMS)
+
   mkdir -p "$HERD_PHP_DIR/$series"
-  mv -f "$tmp/php" "$tmp/php-fpm" "$HERD_PHP_DIR/$series/"
+  mv -f "$tmp/php" "$tmp/php-fpm" "$tmp/SHA256SUMS" "$HERD_PHP_DIR/$series/"
   printf '%s\n' "$patch" >"$HERD_PHP_DIR/$series/VERSION"
 }
 
@@ -142,6 +152,7 @@ php_install() {
   systemctl --user daemon-reload
   systemctl --user enable "omarchy-herd-php@$series.service" >/dev/null 2>&1
   systemctl --user restart "omarchy-herd-php@$series.service"
+  wait_for_socket "$(php_socket "$series")" || warn "PHP $series FPM is slow to start; see: omarchy-herd logs php-$series"
   sites_apply
 }
 
@@ -193,7 +204,8 @@ php_uninstall() {
   local series=$1 users
   [[ -d $HERD_PHP_DIR/$series ]] || die "PHP $series isn't installed"
   [[ $(config_get .php.default) != "$series" ]] || die "PHP $series is the default; pick another default first"
-  users=$(jq -r --arg v "$series" '[.isolated | to_entries[] | select(.value == $v) | .key] | join(", ")' "$HERD_CONFIG")
+  # Only sites that still exist count; a deleted project's old pin shouldn't block removal.
+  users=$(sites_json | jq -r --arg v "$series" '[.[] | select(.isolated and .php == $v) | .name] | join(", ")')
   [[ -z $users ]] || die "PHP $series is still used by: $users"
 
   systemctl --user disable --now "omarchy-herd-php@$series.service" >/dev/null 2>&1 || true
