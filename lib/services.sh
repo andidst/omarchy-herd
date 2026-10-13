@@ -189,8 +189,10 @@ service_targets() {
 }
 
 cmd_service() {
-  local action=$1 target=${2:-all} id unit names=()
-  for id in $(service_targets "$target"); do
+  local action=$1 target=${2:-all} id unit targets names=()
+  # Assigned on its own line so a die inside service_targets stops this command.
+  targets=$(service_targets "$target")
+  for id in $targets; do
     unit=$(service_unit "$id")
     case $action in
     start | restart)

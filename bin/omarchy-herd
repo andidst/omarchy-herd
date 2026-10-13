@@ -83,7 +83,8 @@ main() {
   [[ -f $HERD_CONFIG ]] || die "not set up yet; run: omarchy-herd setup"
   ensure_dirs
 
-  # Only commands that change something wait for the lock; reads stay instant during installs.
+  # Only commands that change something wait for the lock (setup takes it itself), so
+  # reads stay instant while an install runs.
   case $command in
   php) [[ ${1:-list} =~ ^(list|ls|available|which)$ ]] || take_lock ;;
   node) [[ ${1:-list} =~ ^(list|ls|available)$ ]] || take_lock ;;

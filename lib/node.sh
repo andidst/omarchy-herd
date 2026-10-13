@@ -5,15 +5,17 @@ valid_node_version() {
 }
 
 node_default() {
-  mise ls --global --json 2>/dev/null | jq -r '.node[0].requested_version // empty'
+  mise ls --global --json 2>/dev/null | jq -r '.node[0].requested_version // empty' 2>/dev/null || true
 }
 
+# Never fails: a broken or untrusted mise config shouldn't take the whole status down.
 node_installed_json() {
-  local default
-  default=$(mise ls --global --json 2>/dev/null | jq -r '.node[0].version // empty')
-  mise ls node --installed --json 2>/dev/null | jq --arg default "$default" '
+  local default installed
+  default=$(mise ls --global --json 2>/dev/null | jq -r '.node[0].version // empty' 2>/dev/null || true)
+  installed=$(mise ls node --installed --json 2>/dev/null || true)
+  jq --arg default "$default" '
     map({version, path: .install_path, default: (.version == $default)})
-    | sort_by(.version | split(".") | map(tonumber? // 0)) | reverse'
+    | sort_by(.version | split(".") | map(tonumber? // 0)) | reverse' <<<"${installed:-[]}" 2>/dev/null || echo '[]'
 }
 
 # Newest release of each major line from 18 up.

@@ -82,7 +82,8 @@ resolve_site() {
     name=$(site_for_dir "$PWD")
     [[ -n $name ]] || die "$PWD isn't inside a parked or linked site; pass a site name"
   fi
-  site_records | cut -d "$SEP" -f1 | grep -qxF -- "$name" || die "no site named '$name'"
+  # Not grep -q: exiting early would SIGPIPE the producer and fail the pipeline under pipefail.
+  site_records | cut -d "$SEP" -f1 | grep -xF -- "$name" >/dev/null || die "no site named '$name'"
   printf '%s' "$name"
 }
 
@@ -175,7 +176,7 @@ EOF
       [[ $source == proxy ]] && continue
       printf '%s\t%s\n' "$path" "$(site_php "$name")"
     done < <(site_records)
-  } >"$HERD_ETC/php-map"
+  } | write_atomic "$HERD_ETC/php-map"
 
   caddy_reload
   watch_apply
@@ -281,9 +282,10 @@ cmd_unproxy() {
 
 cmd_isolate() {
   local version=${1:-} name
-  valid_php_series "$version" || die "usage: omarchy-herd isolate <php-version> [site]"
-  [[ -x $HERD_PHP_DIR/$version/php ]] || die "PHP $version isn't installed; run: omarchy-herd php install $version"
+  [[ -n $version ]] || die "usage: omarchy-herd isolate <php-version> [site]"
+  php_require_installed "$version"
   name=$(resolve_site "${2:-}")
+  php_ensure_running "$version"
   config_update --arg name "$name" --arg version "$version" '.isolated[$name] = $version'
   sites_apply
   ok "$name.$(tld) now uses PHP $version"

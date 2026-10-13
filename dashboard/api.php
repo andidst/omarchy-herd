@@ -51,6 +51,34 @@ function herd(string ...$args): string
     return $stdout;
 }
 
+/**
+ * Start the CLI as its own transient user service and return at once. Used for actions
+ * that restart the PHP-FPM serving this request: run inline, they'd kill themselves.
+ */
+function herdInBackground(string ...$args): string
+{
+    $unit = 'omarchy-herd-task-' . bin2hex(random_bytes(4));
+    $process = proc_open(
+        ['/usr/bin/systemd-run', '--user', '--collect', '--quiet', '--unit=' . $unit, '--', CLI, ...$args],
+        [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
+    if (! is_resource($process)) {
+        fail('could not start a background task', 500);
+    }
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[2]);
+    if (proc_close($process) !== 0) {
+        fail(trim($stderr) ?: 'could not start a background task', 500);
+    }
+
+    return json_encode([
+        'ok' => true,
+        'background' => true,
+        'message' => 'Working on it: the dashboard reconnects in a few seconds',
+    ]);
+}
+
 function arg(array $input, string $key, string $pattern): string
 {
     $value = $input[$key] ?? '';
@@ -108,9 +136,25 @@ if (! is_array($input)) {
     fail('expected a JSON body');
 }
 
-respond(match ($input['action'] ?? '') {
-    'start', 'stop', 'restart' => herd($input['action'], arg($input, 'service', SERVICE)),
+// The PHP version serving this dashboard; restarting it from here needs a background task.
+$self = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+$action = $input['action'] ?? '';
 
+if (in_array($action, ['start', 'stop', 'restart'], true)) {
+    $service = arg($input, 'service', SERVICE);
+    if ($service === "php-$self") {
+        if ($action === 'stop') {
+            fail("PHP $self runs this dashboard; stop it from a terminal with: omarchy-herd stop php-$self");
+        }
+        respond(herdInBackground($action, $service));
+    }
+    respond(herd($action, $service));
+}
+if ($action === 'php-update' || ($action === 'php-install' && arg($input, 'version', PHP_VERSION_RE) === $self)) {
+    respond(herdInBackground('php', $action === 'php-update' ? 'update' : 'install', ...($action === 'php-update' ? [] : [$self])));
+}
+
+respond(match ($action) {
     'php-install' => herd('php', 'install', arg($input, 'version', PHP_VERSION_RE)),
     'php-uninstall' => herd('php', 'uninstall', arg($input, 'version', PHP_VERSION_RE)),
     'php-default' => herd('php', 'default', arg($input, 'version', PHP_VERSION_RE)),

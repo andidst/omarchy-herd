@@ -83,6 +83,7 @@ cmd_setup() {
   esac
 
   config_init
+  take_lock
 
   # Serve the dashboard, and park ~/Work the first time.
   jq -e '.links.herd' "$HERD_CONFIG" >/dev/null ||

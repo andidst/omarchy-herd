@@ -2,11 +2,17 @@
 
 # Directory listing of the mirror, cached for six hours.
 php_index() {
-  local cache="$HERD_CACHE/php-index.json"
+  local cache="$HERD_CACHE/php-index.json" tmp
   if [[ ! -s $cache || -n $(find "$cache" -mmin +360 2>/dev/null) ]]; then
-    curl -fsSL --proto =https --tlsv1.2 --max-time 30 "$HERD_PHP_MIRROR/?format=json" -o "$cache.tmp" ||
-      { [[ -s $cache ]] || die "couldn't reach $HERD_PHP_MIRROR"; }
-    [[ -s $cache.tmp ]] && mv "$cache.tmp" "$cache"
+    # A private temp file per call, promoted only when it's a complete, valid listing.
+    tmp=$(mktemp "$cache.XXXXXX")
+    HERD_CLEANUP+=("$tmp")
+    if curl -fsSL --proto =https --tlsv1.2 --max-time 30 "$HERD_PHP_MIRROR/?format=json" -o "$tmp" &&
+      jq -e 'type == "array" and length > 0' "$tmp" >/dev/null 2>&1; then
+      mv -f "$tmp" "$cache"
+    elif [[ ! -s $cache ]]; then
+      die "couldn't reach $HERD_PHP_MIRROR"
+    fi
   fi
   cat "$cache"
 }
@@ -102,9 +108,10 @@ EOF
 php_download() {
   local series=$1 patch=$2 tmp sapi binary progress=(--progress-bar)
   [[ -n $HERD_JSON ]] && progress=(-sS)
-  tmp=$(mktemp -d)
-  # Clear the trap as it fires: a RETURN trap otherwise leaks into the caller and runs again.
-  trap 'rm -rf -- "$tmp"; trap - RETURN' RETURN
+  # Stage next to the installed versions: same filesystem, so the final mv is an atomic
+  # rename and a running `php` never sees a missing or half-copied binary.
+  tmp=$(mktemp -d "$HERD_PHP_DIR/.staging.XXXXXX")
+  HERD_CLEANUP+=("$tmp")
 
   for sapi in cli fpm; do
     binary=php
@@ -128,7 +135,22 @@ php_download() {
 
   mkdir -p "$HERD_PHP_DIR/$series"
   mv -f "$tmp/php" "$tmp/php-fpm" "$tmp/SHA256SUMS" "$HERD_PHP_DIR/$series/"
-  printf '%s\n' "$patch" >"$HERD_PHP_DIR/$series/VERSION"
+  printf '%s\n' "$patch" | write_atomic "$HERD_PHP_DIR/$series/VERSION"
+}
+
+php_require_installed() {
+  valid_php_series "${1:-}" || die "unknown PHP version '${1:-}' (choose from ${HERD_PHP_SERIES[*]})"
+  [[ -x $HERD_PHP_DIR/$1/php ]] || die "PHP $1 isn't installed; run: omarchy-herd php install $1"
+}
+
+# Make sure a version's PHP-FPM is up before sites are pointed at it.
+php_ensure_running() {
+  local series=$1
+  user_unit_active "omarchy-herd-php@$series" && return 0
+  [[ -f $HERD_ETC/php-fpm-$series.conf ]] || php_write_fpm_conf "$series"
+  systemctl --user enable --now "omarchy-herd-php@$series.service" >/dev/null 2>&1 ||
+    die "PHP $series failed to start; see: omarchy-herd logs php-$series"
+  wait_for_socket "$(php_socket "$series")" || die "PHP $series didn't start; see: omarchy-herd logs php-$series"
 }
 
 php_install() {
@@ -168,18 +190,30 @@ cmd_php() {
     ok "PHP $(php_installed_patch "$1") is installed"
     ;;
   update)
-    local series updated=()
-    for series in ${1:-$(php_installed_series)}; do
-      [[ $(php_latest_patch "$series") == "$(php_installed_patch "$series")" ]] && continue
+    local series latest targets=() updated=()
+    if [[ -n ${1:-} ]]; then
+      php_require_installed "$1"
+      targets=("$1")
+    else
+      mapfile -t targets < <(php_installed_series)
+    fi
+    for series in "${targets[@]}"; do
+      latest=$(php_latest_patch "$series")
+      [[ -n $latest && $latest != "$(php_installed_patch "$series")" ]] || continue
       php_install "$series"
       updated+=("$(php_installed_patch "$series")")
     done
-    ok "${updated[*]:+Updated to PHP ${updated[*]}}${updated[*]:-PHP is up to date}"
+    if ((${#updated[@]})); then
+      ok "Updated to PHP ${updated[*]}"
+    else
+      ok "PHP is up to date"
+    fi
     ;;
   uninstall | remove) php_uninstall "${1:-}" ;;
   default | use)
     local series=${1:-}
-    [[ -x $HERD_PHP_DIR/$series/php ]] || die "PHP $series isn't installed; run: omarchy-herd php install $series"
+    php_require_installed "$series"
+    php_ensure_running "$series"
     config_update --arg v "$series" '.php.default = $v'
     sites_apply
     ok "PHP $series is now the default for sites and the terminal"
@@ -202,6 +236,7 @@ php_for_dir() {
 
 php_uninstall() {
   local series=$1 users
+  valid_php_series "$series" || die "usage: omarchy-herd php uninstall <${HERD_PHP_SERIES[*]}>"
   [[ -d $HERD_PHP_DIR/$series ]] || die "PHP $series isn't installed"
   [[ $(config_get .php.default) != "$series" ]] || die "PHP $series is the default; pick another default first"
   # Only sites that still exist count; a deleted project's old pin shouldn't block removal.

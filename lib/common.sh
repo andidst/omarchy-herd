@@ -28,6 +28,19 @@ HERD_SYSTEM_UNITS=(omarchy-herd-caddy omarchy-herd-dns)
 
 HERD_JSON=${HERD_JSON:-}
 
+# fd 3 is the real stdout, so die can report JSON errors even from inside $(…).
+exec 3>&1
+
+# Paths removed when the command exits, however it exits.
+HERD_CLEANUP=()
+herd_cleanup() {
+  local path
+  for path in "${HERD_CLEANUP[@]}"; do
+    rm -rf -- "$path"
+  done
+}
+trap herd_cleanup EXIT
+
 # mise lives in /usr/bin, but php-fpm and systemd start us with a minimal PATH.
 export PATH="$HERD_BIN:/usr/local/bin:/usr/bin:$PATH"
 
@@ -41,7 +54,7 @@ warn() {
 
 die() {
   if [[ -n $HERD_JSON ]]; then
-    jq -cn --arg error "$*" '{ok: false, error: $error}'
+    jq -cn --arg error "$*" '{ok: false, error: $error}' >&3
   else
     printf 'omarchy-herd: %s\n' "$*" >&2
   fi
@@ -82,6 +95,16 @@ config_update() {
     rm -f "$tmp"
     die "could not update $HERD_CONFIG"
   fi
+}
+
+# Replace a file in one step (write a sibling temp file, then rename), so readers such
+# as the php shim never see it half-written. Content comes from stdin.
+write_atomic() {
+  local file=$1 tmp
+  tmp=$(mktemp "$file.XXXXXX")
+  HERD_CLEANUP+=("$tmp")
+  cat >"$tmp"
+  mv -f "$tmp" "$file"
 }
 
 # Serialize commands that change state, so the dashboard and terminal can't race.

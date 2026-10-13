@@ -123,6 +123,7 @@ form.add input[name=path] { flex: 1 1 280px; }
 form.add input[name=name] { flex: 0 1 160px; }
 form.add input[name=target] { flex: 0 1 140px; }
 .hint { color: var(--dark-foreground); font-size: 12px; margin: 6px 0 0; }
+.cards + .hint { margin-top: 16px; }
 .parked { display: flex; flex-wrap: wrap; gap: 8px; }
 .empty { padding: 20px; text-align: center; color: var(--dark-foreground); }
 button.btn.tiny { padding: 0 6px; }
@@ -233,9 +234,13 @@ async function run(payload, button) {
     toast(data.message);
     if (payload.action.startsWith('php-')) state.phpAvailable = null;
     if (payload.action.startsWith('node-')) state.nodeAvailable = null;
+    // Background tasks restart the PHP serving this page; give it a moment to come back.
+    if (data.background) await new Promise((resolve) => setTimeout(resolve, 4000));
     await refresh();
   } catch (error) {
-    toast(error.message, true);
+    toast(error instanceof SyntaxError || error instanceof TypeError
+      ? 'Lost the connection for a moment, refreshing…' : error.message, true);
+    setTimeout(refresh, 3000);
   } finally {
     state.busy = false;
     if (button) button.disabled = false;
