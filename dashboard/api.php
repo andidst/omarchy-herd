@@ -1,7 +1,8 @@
 <?php
 
 // JSON API for the dashboard. Every action shells out to the omarchy-herd CLI,
-// so the terminal, the bar widget and this page always agree.
+// so the terminal, the bar widget and this page always agree. Reads run inline;
+// changes run as background tasks whose result the page polls for.
 
 declare(strict_types=1);
 
@@ -51,15 +52,35 @@ function herd(string ...$args): string
     return $stdout;
 }
 
-/**
- * Start the CLI as its own transient user service and return at once. Used for actions
- * that restart the PHP-FPM serving this request: run inline, they'd kill themselves.
- */
-function herdInBackground(string ...$args): string
+/** Where background tasks leave their JSON result for the page to collect. */
+function taskDir(): string
 {
-    $unit = 'omarchy-herd-task-' . bin2hex(random_bytes(4));
+    $data = getenv('XDG_DATA_HOME') ?: getenv('HOME') . '/.local/share';
+
+    return $data . '/omarchy-herd/run/tasks';
+}
+
+/**
+ * Run a changing action as its own transient user service and return its id at once.
+ * Outside PHP-FPM's cgroup, an action that restarts this dashboard's PHP finishes anyway,
+ * and nothing depends on the browser staying connected. The page polls for the result.
+ */
+function startTask(string ...$args): never
+{
+    $dir = taskDir();
+    if (! is_dir($dir) && ! mkdir($dir, 0700, true) && ! is_dir($dir)) {
+        fail('could not create ' . $dir, 500);
+    }
+    foreach (glob($dir . '/*.json') ?: [] as $old) {
+        if (filemtime($old) < time() - 3600) {
+            @unlink($old);
+        }
+    }
+
+    $id = bin2hex(random_bytes(8));
     $process = proc_open(
-        ['/usr/bin/systemd-run', '--user', '--collect', '--quiet', '--unit=' . $unit, '--', CLI, ...$args],
+        ['/usr/bin/systemd-run', '--user', '--collect', '--quiet', '--unit=omarchy-herd-task-' . $id,
+            '--property=StandardOutput=truncate:' . $dir . '/' . $id . '.json', '--', CLI, ...$args, '--json'],
         [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['pipe', 'w']],
         $pipes,
     );
@@ -72,11 +93,36 @@ function herdInBackground(string ...$args): string
         fail(trim($stderr) ?: 'could not start a background task', 500);
     }
 
-    return json_encode([
-        'ok' => true,
-        'background' => true,
-        'message' => 'Working on it: the dashboard reconnects in a few seconds',
-    ]);
+    respond(['ok' => true, 'task' => $id]);
+}
+
+/** A finished task's result, {"pending": true} while it runs, or an error if it died silently. */
+function taskResult(string $id): never
+{
+    $file = taskDir() . '/' . $id . '.json';
+    $result = is_file($file) ? trim((string) file_get_contents($file)) : '';
+    if ($result !== '') {
+        @unlink($file);
+        respond($result);
+    }
+
+    $process = proc_open(
+        ['/usr/bin/systemctl', '--user', 'is-active', 'omarchy-herd-task-' . $id],
+        [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']],
+        $pipes,
+    );
+    $state = '';
+    if (is_resource($process)) {
+        $state = trim((string) stream_get_contents($pipes[1]));
+        fclose($pipes[1]);
+        proc_close($process);
+    }
+    if (in_array($state, ['active', 'activating', 'reloading'], true)) {
+        respond(['pending' => true]);
+    }
+
+    @unlink($file);
+    fail("The action stopped without a result; see: journalctl --user -u omarchy-herd-task-$id", 500);
 }
 
 function arg(array $input, string $key, string $pattern): string
@@ -122,6 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         'status' => herd('status'),
         'php-available' => herd('php', 'available'),
         'node-available' => herd('node', 'available'),
+        'task' => taskResult(arg($_GET, 'id', '/^[0-9a-f]{16}$/')),
         default => fail('unknown action'),
     });
 }
@@ -136,45 +183,37 @@ if (! is_array($input)) {
     fail('expected a JSON body');
 }
 
-// The PHP version serving this dashboard; restarting it from here needs a background task.
-$self = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
 $action = $input['action'] ?? '';
 
-if (in_array($action, ['start', 'stop', 'restart'], true)) {
-    $service = arg($input, 'service', SERVICE);
-    if ($service === "php-$self") {
-        if ($action === 'stop') {
-            fail("PHP $self runs this dashboard; stop it from a terminal with: omarchy-herd stop php-$self");
-        }
-        respond(herdInBackground($action, $service));
-    }
-    respond(herd($action, $service));
-}
-if ($action === 'php-update' || ($action === 'php-install' && arg($input, 'version', PHP_VERSION_RE) === $self)) {
-    respond(herdInBackground('php', $action === 'php-update' ? 'update' : 'install', ...($action === 'php-update' ? [] : [$self])));
+// Stopping the PHP that serves this page would leave nothing to start it again from here.
+$self = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+if ($action === 'stop' && arg($input, 'service', SERVICE) === "php-$self") {
+    fail("PHP $self runs this dashboard; stop it from a terminal with: omarchy-herd stop php-$self");
 }
 
-respond(match ($action) {
-    'php-install' => herd('php', 'install', arg($input, 'version', PHP_VERSION_RE)),
-    'php-uninstall' => herd('php', 'uninstall', arg($input, 'version', PHP_VERSION_RE)),
-    'php-default' => herd('php', 'default', arg($input, 'version', PHP_VERSION_RE)),
-    'php-update' => herd('php', 'update'),
+match ($action) {
+    'start', 'stop', 'restart' => startTask($action, arg($input, 'service', SERVICE)),
 
-    'isolate' => herd('isolate', arg($input, 'version', PHP_VERSION_RE), arg($input, 'site', SITE)),
-    'unisolate' => herd('unisolate', arg($input, 'site', SITE)),
+    'php-install' => startTask('php', 'install', arg($input, 'version', PHP_VERSION_RE)),
+    'php-uninstall' => startTask('php', 'uninstall', arg($input, 'version', PHP_VERSION_RE)),
+    'php-default' => startTask('php', 'default', arg($input, 'version', PHP_VERSION_RE)),
+    'php-update' => startTask('php', 'update'),
 
-    'node-install' => herd('node', 'install', arg($input, 'version', NODE_VERSION)),
-    'node-uninstall' => herd('node', 'uninstall', arg($input, 'version', '/^\d+\.\d+\.\d+$/')),
-    'node-default' => herd('node', 'default', arg($input, 'version', NODE_VERSION)),
-    'node-use' => herd('node', 'use', arg($input, 'version', NODE_VERSION), arg($input, 'site', SITE)),
-    'node-reset' => herd('node', 'reset', arg($input, 'site', SITE)),
+    'isolate' => startTask('isolate', arg($input, 'version', PHP_VERSION_RE), arg($input, 'site', SITE)),
+    'unisolate' => startTask('unisolate', arg($input, 'site', SITE)),
 
-    'park' => herd('park', arg($input, 'path', PATH_RE)),
-    'unpark' => herd('unpark', arg($input, 'path', PATH_RE)),
-    'link' => herd('link', arg($input, 'name', SITE), arg($input, 'path', PATH_RE)),
-    'unlink' => herd('unlink', arg($input, 'name', SITE)),
-    'proxy' => herd('proxy', arg($input, 'name', SITE), arg($input, 'target', '/^([a-z0-9.-]+:)?\d{2,5}$/')),
-    'unproxy' => herd('unproxy', arg($input, 'name', SITE)),
+    'node-install' => startTask('node', 'install', arg($input, 'version', NODE_VERSION)),
+    'node-uninstall' => startTask('node', 'uninstall', arg($input, 'version', '/^\d+\.\d+\.\d+$/')),
+    'node-default' => startTask('node', 'default', arg($input, 'version', NODE_VERSION)),
+    'node-use' => startTask('node', 'use', arg($input, 'version', NODE_VERSION), arg($input, 'site', SITE)),
+    'node-reset' => startTask('node', 'reset', arg($input, 'site', SITE)),
+
+    'park' => startTask('park', arg($input, 'path', PATH_RE)),
+    'unpark' => startTask('unpark', arg($input, 'path', PATH_RE)),
+    'link' => startTask('link', arg($input, 'name', SITE), arg($input, 'path', PATH_RE)),
+    'unlink' => startTask('unlink', arg($input, 'name', SITE)),
+    'proxy' => startTask('proxy', arg($input, 'name', SITE), arg($input, 'target', '/^([a-z0-9.-]+:)?\d{2,5}$/')),
+    'unproxy' => startTask('unproxy', arg($input, 'name', SITE)),
 
     default => fail('unknown action'),
-});
+};

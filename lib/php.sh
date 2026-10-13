@@ -7,11 +7,14 @@ php_index() {
     # A private temp file per call, promoted only when it's a complete, valid listing.
     tmp=$(mktemp "$cache.XXXXXX")
     HERD_CLEANUP+=("$tmp")
+    # Often runs inside $(…), where the EXIT cleanup doesn't reach, so remove tmp by hand.
+    find "$HERD_CACHE" -maxdepth 1 -name 'php-index.json.*' -mmin +60 -delete 2>/dev/null || true
     if curl -fsSL --proto =https --tlsv1.2 --max-time 30 "$HERD_PHP_MIRROR/?format=json" -o "$tmp" &&
       jq -e 'type == "array" and length > 0' "$tmp" >/dev/null 2>&1; then
       mv -f "$tmp" "$cache"
-    elif [[ ! -s $cache ]]; then
-      die "couldn't reach $HERD_PHP_MIRROR"
+    else
+      rm -f "$tmp"
+      [[ -s $cache ]] || die "couldn't reach $HERD_PHP_MIRROR"
     fi
   fi
   cat "$cache"
@@ -135,7 +138,7 @@ php_download() {
 
   mkdir -p "$HERD_PHP_DIR/$series"
   mv -f "$tmp/php" "$tmp/php-fpm" "$tmp/SHA256SUMS" "$HERD_PHP_DIR/$series/"
-  printf '%s\n' "$patch" | write_atomic "$HERD_PHP_DIR/$series/VERSION"
+  write_atomic "$HERD_PHP_DIR/$series/VERSION" <<<"$patch"
 }
 
 php_require_installed() {
@@ -148,9 +151,10 @@ php_ensure_running() {
   local series=$1
   user_unit_active "omarchy-herd-php@$series" && return 0
   [[ -f $HERD_ETC/php-fpm-$series.conf ]] || php_write_fpm_conf "$series"
+  rm -f "$(php_socket "$series")"
   systemctl --user enable --now "omarchy-herd-php@$series.service" >/dev/null 2>&1 ||
     die "PHP $series failed to start; see: omarchy-herd logs php-$series"
-  wait_for_socket "$(php_socket "$series")" || die "PHP $series didn't start; see: omarchy-herd logs php-$series"
+  fpm_wait "$series" || die "PHP $series didn't start; see: omarchy-herd logs php-$series"
 }
 
 php_install() {
@@ -174,7 +178,7 @@ php_install() {
   systemctl --user daemon-reload
   systemctl --user enable "omarchy-herd-php@$series.service" >/dev/null 2>&1
   systemctl --user restart "omarchy-herd-php@$series.service"
-  wait_for_socket "$(php_socket "$series")" || warn "PHP $series FPM is slow to start; see: omarchy-herd logs php-$series"
+  fpm_wait "$series" || die "PHP $series didn't start; see: omarchy-herd logs php-$series"
   sites_apply
 }
 
@@ -244,6 +248,8 @@ php_uninstall() {
   [[ -z $users ]] || die "PHP $series is still used by: $users"
 
   systemctl --user disable --now "omarchy-herd-php@$series.service" >/dev/null 2>&1 || true
+  # Drop pins left by deleted projects, so a re-cloned one doesn't point at a missing PHP.
+  config_update --arg v "$series" '.isolated |= with_entries(select(.value != $v))'
   rm -rf "${HERD_PHP_DIR:?}/$series"
   rm -f "$HERD_BIN/php$series" "$HERD_ETC/php-fpm-$series.conf"
   ok "Removed PHP $series (settings kept in $HERD_CONFIG_DIR/php/$series)"

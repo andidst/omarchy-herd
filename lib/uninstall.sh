@@ -22,10 +22,10 @@ cmd_uninstall() {
     [[ -n $unit ]] || continue
     systemctl --user disable --now "$unit" >/dev/null 2>&1 || true
   done < <(systemctl --user list-units --all --plain --no-legend 'omarchy-herd-*' 2>/dev/null | awk '{print $1}')
-  for unit in mariadb postgres valkey; do
-    systemctl --user disable --now "omarchy-herd-$unit.service" >/dev/null 2>&1 || true
+  for unit in mariadb.service postgres.service valkey.service watch.path; do
+    systemctl --user disable --now "omarchy-herd-$unit" >/dev/null 2>&1 || true
   done
-  rm -f "$HERD_UNIT_DIR"/omarchy-herd-*.service
+  rm -f "$HERD_UNIT_DIR"/omarchy-herd-*.service "$HERD_UNIT_DIR"/omarchy-herd-*.path
   systemctl --user daemon-reload
 
   info "Removing the web server, .test DNS and certificate authority (asks for your password)…"
@@ -42,10 +42,12 @@ cmd_uninstall() {
     sed -i "\|^$HERD_SHELL_MARKER\$|,+1d" "$HOME/.bashrc"
   fi
 
-  local plugin="$HOME/.config/omarchy/plugins/andidst.herd"
+  local id plugin
+  id=$(jq -r '.id' "$HERD_ROOT/plugin/manifest.json")
+  plugin="$HOME/.config/omarchy/plugins/$id"
   if [[ -L $plugin ]]; then
     if command -v omarchy >/dev/null; then
-      omarchy plugin disable andidst.herd >/dev/null 2>&1 || true
+      omarchy plugin disable "$id" >/dev/null 2>&1 || true
     fi
     rm -f "$plugin"
   fi

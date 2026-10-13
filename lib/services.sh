@@ -181,7 +181,7 @@ service_targets() {
   postgres | postgresql | pgsql) echo postgres ;;
   valkey | redis) echo valkey ;;
   php-*)
-    [[ -x $HERD_PHP_DIR/${target#php-}/php ]] || die "PHP ${target#php-} isn't installed"
+    php_require_installed "${target#php-}"
     echo "$target"
     ;;
   *) die "unknown service '$target' (mariadb, postgres, valkey, php-<version>, databases, all)" ;;

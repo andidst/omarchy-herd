@@ -12,11 +12,11 @@ for unit in omarchy-herd-caddy omarchy-herd-dns; do
 done
 systemctl daemon-reload
 
-if nmcli -t -f NAME connection show | grep -qx omarchy-herd; then
+if nmcli connection show omarchy-herd >/dev/null 2>&1; then
   nmcli connection delete omarchy-herd >/dev/null
 fi
 
-rm -rf /etc/omarchy-herd
+rm -rf /etc/omarchy-herd  # includes setup-version
 
 if [[ -f /etc/ca-certificates/trust-source/anchors/omarchy-herd.crt ]]; then
   rm -f /etc/ca-certificates/trust-source/anchors/omarchy-herd.crt

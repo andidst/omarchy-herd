@@ -152,7 +152,8 @@ omarchy-herd is built for a **single-user development machine**. Know what it do
 - **Nothing is reachable from the network.** Caddy, PHP-FPM, the databases and dnsmasq listen only on loopback addresses or Unix sockets.
 - **Databases have no passwords**, like Herd and DBngin. Any program running on this machine can connect to them. Don't keep production data in them.
 - **Other local accounts can reach your sites.** Loopback ports aren't per-user, so on a shared machine another user could load your sites and the dashboard. Don't use omarchy-herd on multi-user systems.
-- **The dashboard can change your setup.** It only accepts requests addressed to `herd.test` from its own page: it checks the `Host`, `Origin` and `Sec-Fetch-Site` headers, requires a custom header on every change (which other websites can't send without a CORS preflight it never answers), sends a strict Content Security Policy and can't be framed. It runs the same CLI you do, with every argument validated against an allow-list.
+- **Root only touches system files.** The one-time root step never creates, changes or copies anything inside your home folder: it checks that the folders the web server writes to are real directories you own (no symlinks), and reads the certificate authority as you.
+- **The dashboard can change your setup.** Each change runs as a short-lived background service, so it completes even if the page reloads. The dashboard only accepts requests addressed to `herd.test` from its own page: it checks the `Host`, `Origin` and `Sec-Fetch-Site` headers, requires a custom header on every change (which other websites can't send without a CORS preflight it never answers), sends a strict Content Security Policy and can't be framed. It runs the same CLI you do, with every argument validated against an allow-list.
 - **A local certificate authority is trusted system-wide.** Its private key lives in `~/.local/share/caddy/pki`; anything able to read that folder could issue certificates your browser trusts. That is the same trade-off Herd, Valet and mkcert make. `omarchy-herd uninstall` removes the trust.
 - **PHP binaries come from static-php-cli's download server** (`dl.static-php.dev`) over HTTPS. The project doesn't publish checksums or signatures, so omarchy-herd records the SHA-256 of what it installed in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS` for later auditing.
 - **What gets served.** omarchy-herd refuses to park or link `/`, your home folder or hidden folders. In project roots without a `public/` folder, dotfiles are hidden but every other file is served, as with any static web server.
@@ -170,6 +171,15 @@ Found a security problem? Please report it privately through GitHub's **Security
 | A site returns 502 | Its PHP version isn't running: `omarchy-herd start php-8.4` |
 | A database won't start | `omarchy-herd logs mariadb` (or `postgres`, `valkey`). Something else may already use the port |
 | `.test` names don't resolve | `resolvectl status herd0` should show DNS server `127.0.0.153` and DNS domain `~test`; re-apply with `omarchy-herd setup --system` |
+
+## Upgrade
+
+```bash
+git -C ~/Work/omarchy-herd pull
+omarchy-herd setup
+```
+
+`setup` is safe to re-run. When an upgrade changes the root-owned pieces (the web server and DNS services), it asks for your password once to re-apply them.
 
 ## Uninstall
 

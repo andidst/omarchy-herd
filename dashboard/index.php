@@ -220,6 +220,25 @@ async function get(action) {
   return data;
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Changes run as background tasks on the server. Poll until one reports back; requests can
+// fail for a moment while a task restarts the PHP that serves this page.
+async function waitForTask(id) {
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(700);
+    try {
+      const response = await fetch('api.php?action=task&id=' + encodeURIComponent(id));
+      const data = await response.json();
+      if (!data.pending) return data;
+    } catch {
+      // PHP is restarting; keep polling.
+    }
+  }
+  throw new Error('Still running after 15 minutes; check omarchy-herd status in a terminal');
+}
+
 async function run(payload, button) {
   if (button) button.disabled = true;
   state.busy = true;
@@ -229,21 +248,20 @@ async function run(payload, button) {
       headers: { 'Content-Type': 'application/json', 'X-Herd': '1' },
       body: JSON.stringify(payload),
     });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || 'Something went wrong');
-    toast(data.message);
+    const started = await response.json();
+    if (!started.ok) throw new Error(started.error || 'Something went wrong');
+    const result = await waitForTask(started.task);
+    if (!result.ok) throw new Error(result.error || 'Something went wrong');
+    toast(result.message);
     if (payload.action.startsWith('php-')) state.phpAvailable = null;
     if (payload.action.startsWith('node-')) state.nodeAvailable = null;
-    // Background tasks restart the PHP serving this page; give it a moment to come back.
-    if (data.background) await new Promise((resolve) => setTimeout(resolve, 4000));
-    await refresh();
   } catch (error) {
     toast(error instanceof SyntaxError || error instanceof TypeError
-      ? 'Lost the connection for a moment, refreshing…' : error.message, true);
-    setTimeout(refresh, 3000);
+      ? 'Lost the connection to the dashboard; refreshing…' : error.message, true);
   } finally {
     state.busy = false;
     if (button) button.disabled = false;
+    await refresh();
   }
 }
 

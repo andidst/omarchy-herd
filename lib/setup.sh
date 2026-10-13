@@ -49,11 +49,18 @@ system_setup_needed() {
     command -v "$cmd" >/dev/null || return 0
   done
   [[ -f /etc/ca-certificates/trust-source/anchors/omarchy-herd.crt ]] || return 0
+  # Older installs predate the current units (e.g. the sandboxing); re-apply them.
+  [[ $(cat /etc/omarchy-herd/setup-version 2>/dev/null) == "$HERD_SYSTEM_SETUP_VERSION" ]] || return 0
   return 1
 }
 
 run_system_setup() {
   local script="$HERD_ROOT/setup/root-setup.sh"
+  # Root won't create anything in your home, so make every folder Caddy writes to now.
+  local caddy_data=${HERD_CA_ROOT%/pki/authorities/local/root.crt}
+  mkdir -p "$caddy_data"
+  chmod 700 "$caddy_data"
+  ensure_dirs
   info "Setting up the web server, .test DNS and HTTPS certificates (asks for your password)…"
   if [[ -t 0 ]]; then
     sudo "$script" "$HERD_CADDYFILE" "$HERD_RUN" "$HERD_CA_ROOT"

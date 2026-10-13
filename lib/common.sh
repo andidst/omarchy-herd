@@ -23,8 +23,9 @@ HERD_PHP_MIRROR="https://dl.static-php.dev/static-php-cli/bulk"
 # Static PHP builds published by static-php-cli.
 HERD_PHP_SERIES=(8.0 8.1 8.2 8.3 8.4 8.5)
 
-# System units installed once by setup/root-setup.sh.
+# System units installed by setup/root-setup.sh, and the SETUP_VERSION it must have written.
 HERD_SYSTEM_UNITS=(omarchy-herd-caddy omarchy-herd-dns)
+HERD_SYSTEM_SETUP_VERSION=2
 
 HERD_JSON=${HERD_JSON:-}
 
@@ -149,7 +150,11 @@ valid_path() {
 servable_dir() {
   local dir=$1
   valid_path "$dir" || die "unsupported characters in $dir"
-  [[ $dir != / && $dir != "$HOME" ]] || die "refusing to serve $dir; pick the folder that holds your projects"
+  local home
+  home=$(readlink -f -- "$HOME")
+  # Neither home itself nor anything above it, which would publish every folder in home.
+  [[ $dir != / && $dir != "$home" && $home != "$dir"/* ]] ||
+    die "refusing to serve $dir; pick the folder that holds your projects"
   [[ $dir != */.* ]] || die "refusing to serve hidden folder $dir"
 }
 
@@ -161,10 +166,14 @@ system_unit_active() {
   systemctl is-active --quiet "$1"
 }
 
-wait_for_socket() {
-  local i
+# Wait until a PHP-FPM unit is running and listening. A leftover socket from a crashed
+# FPM doesn't count: the unit must be active too.
+fpm_wait() {
+  local series=$1 socket i
+  socket=$(php_socket "$series")
   for i in {1..50}; do
-    [[ -S $1 ]] && return 0
+    user_unit_active "omarchy-herd-php@$series" && [[ -S $socket ]] && return 0
+    systemctl --user is-failed --quiet "omarchy-herd-php@$series" && return 1
     sleep 0.1
   done
   return 1

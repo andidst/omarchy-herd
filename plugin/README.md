@@ -20,13 +20,13 @@ It uses the same shared pieces as the built-in panels (`qs.Ui` `Panel`, `BarIcon
 
 ## Install
 
-The plugin folder is symlinked into the shell's user plugin directory and placed on the bar
-after `omarchy.agents`:
+`install.sh` at the repository root does this for you. By hand, symlink the folder into the
+shell's user plugin directory and put it on the bar:
 
 ```bash
 ln -s ~/Work/omarchy-herd/plugin ~/.config/omarchy/plugins/andidst.herd
 omarchy-shell shell rescanPlugins
-omarchy plugin enable andidst.herd --section right --after omarchy.agents
+omarchy plugin enable andidst.herd --section right
 ```
 
 The `enable` command writes `{ "id": "andidst.herd" }` into `bar.layout.right` in
@@ -37,8 +37,8 @@ and delete the symlink.
 
 - The shell watches `~/.config/omarchy/plugins` with `inotifywait -r`, which does not follow
   symlinks. Edits in this folder therefore do not trigger an automatic reload.
-- On this machine, `omarchy-shell shell rescanPlugins` re-creates the widget but keeps the QML it
-  compiled before, because this Quickshell build has no `Qt.clearComponentCache`. Code changes
+- `omarchy-shell shell rescanPlugins` re-creates the widget but keeps the QML it compiled
+  before, because current Quickshell builds have no `Qt.clearComponentCache`. Code changes
   take effect only after `omarchy restart shell`.
 - A rescan is enough for manifest changes.
 

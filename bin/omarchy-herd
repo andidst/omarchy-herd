@@ -109,7 +109,7 @@ main() {
   services) cmd_services ;;
   start | stop | restart) cmd_service "$command" "$@" ;;
   logs) cmd_logs "$@" ;;
-  dashboard) xdg-open "https://herd.$(tld)" >/dev/null 2>&1 & ;;
+  dashboard) xdg-open "https://herd.$(tld)" >/dev/null 2>&1 3>&- & ;;
   apply) sites_apply; ok "Regenerated site config" ;;
   *) die "unknown command '$command' (see: omarchy-herd help)" ;;
   esac
