@@ -1,0 +1,7 @@
+# Every change needs a review from a code owner before it can merge into main.
+*                       @andidst
+
+# Runs as root, or decides what the dashboard may run: review with extra care.
+/setup/                 @andidst
+/dashboard/api.php      @andidst
+/.github/               @andidst

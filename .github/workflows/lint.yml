@@ -7,11 +7,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: ShellCheck
         run: shellcheck -x bin/omarchy-herd lib/*.sh setup/*.sh install.sh
       - name: PHP syntax
@@ -19,3 +25,32 @@ jobs:
       - name: JSON
         run: |
           jq empty plugin/manifest.json plugin/sample-status.json
+      - name: Versions agree
+        run: |
+          # The CLI re-runs the root half of setup when these differ, so they must move together.
+          cli=$(sed -n 's/^HERD_SYSTEM_SETUP_VERSION=//p' lib/common.sh)
+          root=$(sed -n 's/^SETUP_VERSION=//p' setup/root-setup.sh)
+          [[ -n $cli && $cli == "$root" ]] ||
+            { echo "::error::HERD_SYSTEM_SETUP_VERSION ($cli) in lib/common.sh != SETUP_VERSION ($root) in setup/root-setup.sh"; exit 1; }
+          herd=$(sed -n 's/^HERD_VERSION="\(.*\)"$/\1/p' lib/common.sh)
+          plugin=$(jq -r .version plugin/manifest.json)
+          [[ $herd == "$plugin" ]] ||
+            { echo "::error::HERD_VERSION ($herd) != plugin/manifest.json version ($plugin)"; exit 1; }
+
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: CLI loads and answers
+        run: |
+          # A fresh HOME: nothing is set up, so this only checks that every module sources
+          # cleanly and that errors keep the --json contract the dashboard and bar rely on.
+          export HOME=$(mktemp -d)
+          bin/omarchy-herd help | grep -q '^omarchy-herd '
+          bin/omarchy-herd version
+          if out=$(bin/omarchy-herd status --json); then
+            echo "::error::status should fail before setup"; exit 1
+          fi
+          jq -e '.ok == false and (.error | type == "string")' <<<"$out"
