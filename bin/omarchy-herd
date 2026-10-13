@@ -79,8 +79,11 @@ main() {
   [[ -f $HERD_CONFIG ]] || die "not set up yet; run: omarchy-herd setup"
   ensure_dirs
 
+  # Only commands that change something wait for the lock; reads stay instant during installs.
   case $command in
-  park | unpark | link | unlink | proxy | unproxy | isolate | unisolate | php | node | start | stop | restart) take_lock ;;
+  php) [[ ${1:-list} =~ ^(list|ls|available|which)$ ]] || take_lock ;;
+  node) [[ ${1:-list} =~ ^(list|ls|available)$ ]] || take_lock ;;
+  park | unpark | link | unlink | proxy | unproxy | isolate | unisolate | start | stop | restart) take_lock ;;
   esac
 
   case $command in

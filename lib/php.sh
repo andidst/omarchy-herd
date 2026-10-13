@@ -102,7 +102,8 @@ EOF
 php_download() {
   local series=$1 patch=$2 tmp sapi
   tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' RETURN
+  # Clear the trap as it fires: a RETURN trap otherwise leaks into the caller and runs again.
+  trap 'rm -rf -- "$tmp"; trap - RETURN' RETURN
 
   for sapi in cli fpm; do
     info "Downloading PHP $patch ($sapi)…"
