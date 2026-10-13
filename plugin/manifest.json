@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "andidst.herd",
+  "name": "Herd",
+  "version": "0.1.0",
+  "author": "andidst",
+  "license": "MIT",
+  "description": "omarchy-herd at a glance: web/DNS/HTTPS health, databases, PHP and Node versions, and .test sites.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Herd",
+    "description": "Start and stop Herd databases, check PHP versions, and open .test sites.",
+    "category": "Development",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 30
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Bar refresh interval (seconds)",
+        "min": 10,
+        "max": 3600,
+        "step": 5,
+        "defaultValue": 30
+      }
+    ]
+  }
+}
