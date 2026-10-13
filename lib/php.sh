@@ -116,13 +116,19 @@ php_download() {
   tmp=$(mktemp -d "$HERD_PHP_DIR/.staging.XXXXXX")
   HERD_CLEANUP+=("$tmp")
 
+  local errors=/dev/stderr
+  [[ -n $HERD_JSON ]] && errors="$tmp/curl.err"
+
   for sapi in cli fpm; do
     binary=php
     [[ $sapi == fpm ]] && binary=php-fpm
     info "Downloading PHP $patch ($sapi)…"
-    curl -fL --proto =https --tlsv1.2 --max-time 600 "${progress[@]}" \
-      "$HERD_PHP_MIRROR/php-$patch-$sapi-linux-x86_64.tar.gz" -o "$tmp/$sapi.tar.gz" ||
-      die "download of PHP $patch ($sapi) failed"
+    # Retries cover the mirror's occasional dropped connections and rate limits. In --json
+    # mode curl's own error is kept, so the dashboard shows why a download failed.
+    curl -fL --proto =https --tlsv1.2 --max-time 600 --retry 3 --retry-delay 3 --retry-all-errors \
+      "${progress[@]}" "$HERD_PHP_MIRROR/php-$patch-$sapi-linux-x86_64.tar.gz" -o "$tmp/$sapi.tar.gz" \
+      2>"$errors" ||
+      die "download of PHP $patch ($sapi) failed${HERD_JSON:+: $(tail -1 "$tmp/curl.err" 2>/dev/null)}"
     # Extract only the one binary we expect, nothing else the archive might carry.
     tar -xzf "$tmp/$sapi.tar.gz" -C "$tmp" --no-same-owner -- "$binary" ||
       die "couldn't unpack PHP $patch ($sapi)"
