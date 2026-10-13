@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# omarchy-herd: a Herd-style local PHP/Node environment for Omarchy, without Docker.
+
+set -euo pipefail
+
+HERD_ROOT=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+
+source "$HERD_ROOT/lib/common.sh"
+source "$HERD_ROOT/lib/sites.sh"
+source "$HERD_ROOT/lib/php.sh"
+source "$HERD_ROOT/lib/node.sh"
+source "$HERD_ROOT/lib/services.sh"
+source "$HERD_ROOT/lib/setup.sh"
+
+usage() {
+  cat <<EOF
+omarchy-herd $HERD_VERSION: local PHP and Node sites on .test domains
+
+Sites
+  park [dir]                 Serve every folder in dir as <folder>.test (default: current dir)
+  unpark [dir]               Stop serving a parked folder
+  link [name] [dir]          Serve one folder as <name>.test
+  unlink [name]              Remove a linked site
+  proxy <name> <port>        Send <name>.test to a dev server, e.g. Vite on 5173
+  unproxy <name>             Remove a proxy
+  sites                      List all sites with their PHP and Node versions
+  open [site]                Open a site in the browser
+  isolate <php> [site]       Pin a site to a PHP version
+  unisolate [site]           Use the default PHP again
+
+PHP
+  php list                   Installed versions
+  php available              Versions you can install
+  php install <8.x>          Download and start a PHP version
+  php update [8.x]           Update to the newest patch release
+  php default <8.x>          Default PHP for sites and the terminal
+  php uninstall <8.x>        Remove a version
+  php which                  PHP version used in the current folder
+
+Node (via mise)
+  node list | available
+  node install <ver>         e.g. node install 22
+  node default <ver>         Default Node everywhere
+  node use <ver> [site]      Pin a site to a Node version (mise.local.toml)
+  node reset [site]          Use the default Node again
+  node uninstall <x.y.z>
+
+Databases and services
+  services                   MariaDB, PostgreSQL, Valkey status and connection details
+  start|stop|restart [svc]   mariadb, postgres, valkey, php-8.4, databases, all (default)
+  logs <svc|site>            Follow a log
+
+Setup
+  setup                      First-time setup (asks for your password once)
+  status                     Everything at a glance
+  doctor                     Check that every piece works
+  dashboard                  Open the dashboard at https://herd.test
+
+Add --json to any command for machine-readable output.
+EOF
+}
+
+main() {
+  local args=() arg
+  for arg in "$@"; do
+    if [[ $arg == --json ]]; then HERD_JSON=1; else args+=("$arg"); fi
+  done
+  set -- "${args[@]+"${args[@]}"}"
+
+  local command=${1:-help}
+  shift || true
+
+  case $command in
+  help | -h | --help) usage; return ;;
+  version | --version) echo "$HERD_VERSION"; return ;;
+  setup) cmd_setup "$@"; return ;;
+  esac
+
+  [[ -f $HERD_CONFIG ]] || die "not set up yet; run: omarchy-herd setup"
+  ensure_dirs
+
+  case $command in
+  park | unpark | link | unlink | proxy | unproxy | isolate | unisolate | php | node | start | stop | restart) take_lock ;;
+  esac
+
+  case $command in
+  status) cmd_status ;;
+  doctor) cmd_doctor ;;
+  sites | links) cmd_sites ;;
+  park) cmd_park "$@" ;;
+  unpark) cmd_unpark "$@" ;;
+  link) cmd_link "$@" ;;
+  unlink) cmd_unlink "$@" ;;
+  proxy) cmd_proxy "$@" ;;
+  unproxy) cmd_unproxy "$@" ;;
+  isolate) cmd_isolate "$@" ;;
+  unisolate) cmd_unisolate "$@" ;;
+  open) cmd_open "$@" ;;
+  php) cmd_php "$@" ;;
+  node) cmd_node "$@" ;;
+  services) cmd_services ;;
+  start | stop | restart) cmd_service "$command" "$@" ;;
+  logs) cmd_logs "$@" ;;
+  dashboard) xdg-open "https://herd.$(tld)" >/dev/null 2>&1 & ;;
+  apply) sites_apply; ok "Regenerated site config" ;;
+  *) die "unknown command '$command' (see: omarchy-herd help)" ;;
+  esac
+}
+
+main "$@"
