@@ -1,0 +1,69 @@
+name: Bug report
+description: Something doesn't work the way the docs say it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check [Troubleshooting](https://github.com/andidst/omarchy-herd/wiki/Troubleshooting) and [existing issues](https://github.com/andidst/omarchy-herd/issues?q=is%3Aissue) first.
+
+        **Security problems:** don't file them here. Use [private vulnerability reporting](https://github.com/andidst/omarchy-herd/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        I ran `omarchy-herd isolate 8.3 shop` and https://shop.test returns 502.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. omarchy-herd php install 8.3
+        2. omarchy-herd isolate 8.3 shop
+        3. Open https://shop.test
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `omarchy-herd doctor`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `omarchy-herd status`
+      description: Remove anything you'd rather not share, such as project names or paths.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: For example `omarchy-herd logs caddy`, `omarchy-herd logs php-8.4`, or `journalctl -u omarchy-herd-caddy -n 50`.
+      render: text
+  - type: input
+    id: commit
+    attributes:
+      label: omarchy-herd commit
+      description: "`git -C ~/Work/omarchy-herd rev-parse --short HEAD`"
+    validations:
+      required: true
+  - type: input
+    id: omarchy
+    attributes:
+      label: Omarchy version
+      description: "`omarchy version`"
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser (if the problem shows up there)
+      options:
+        - Not browser-related
+        - Chromium / Chrome
+        - Firefox
+        - Other

@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest something omarchy-herd should do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For open-ended ideas or questions, [Discussions](https://github.com/andidst/omarchy-herd/discussions) may be a better place to start.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem or workflow, not the solution yet.
+      placeholder: I work on a project that needs MongoDB, and I have to run it by hand.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like omarchy-herd to do?
+      placeholder: Add MongoDB as a service you can start and stop like MariaDB.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself.

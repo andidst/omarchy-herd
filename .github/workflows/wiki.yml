@@ -1,0 +1,47 @@
+name: Wiki
+
+# Publishes wiki/ to the GitHub wiki, so wiki changes are reviewed in pull requests like code.
+# Direct edits on the wiki are overwritten by the next run.
+
+on:
+  push:
+    branches: [main]
+    paths: [wiki/**]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'andidst/omarchy-herd'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          wiki="$RUNNER_TEMP/wiki"
+          git clone --depth 1 "https://x-access-token:$TOKEN@github.com/$GITHUB_REPOSITORY.wiki.git" "$wiki" || {
+            echo "::error::The wiki repository doesn't exist yet. Create any page at https://github.com/$GITHUB_REPOSITORY/wiki once, then re-run this workflow."
+            exit 1
+          }
+          rsync -a --delete --exclude .git wiki/ "$wiki/"
+          cd "$wiki"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki is already up to date."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Publish wiki from $GITHUB_REPOSITORY@${GITHUB_SHA::7}"
+          git push

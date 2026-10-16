@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/andidst/omarchy-herd/discussions
+    about: Ask how to do something, or float an idea before opening a feature request.
+  - name: Security vulnerability
+    url: https://github.com/andidst/omarchy-herd/security/advisories/new
+    about: Report security problems privately, not as public issues.
+  - name: Documentation
+    url: https://github.com/andidst/omarchy-herd/wiki
+    about: Guides, recipes, troubleshooting and the CLI reference.

@@ -13,6 +13,8 @@ A [Laravel Herd](https://herd.laravel.com)–style local development environment
 
 > omarchy-herd is a community project. It isn't affiliated with Laravel, Laravel Herd or Omarchy.
 
+**Documentation:** the [wiki](https://github.com/andidst/omarchy-herd/wiki) has recipes, the full CLI reference, troubleshooting and how it all works. **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Requirements
 
 - Omarchy (Arch Linux with Hyprland, NetworkManager and systemd-resolved, as Omarchy ships them)
@@ -158,7 +160,7 @@ omarchy-herd is built for a **single-user development machine**. Know what it do
 - **PHP binaries come from static-php-cli's download server** (`dl.static-php.dev`) over HTTPS. The project doesn't publish checksums or signatures, so omarchy-herd records the SHA-256 of what it installed in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS` for later auditing.
 - **What gets served.** omarchy-herd refuses to park or link `/`, your home folder or hidden folders. In project roots without a `public/` folder, dotfiles are hidden but every other file is served, as with any static web server.
 
-Found a security problem? Please report it privately through GitHub's **Security → Report a vulnerability** on this repository rather than opening a public issue.
+Found a security problem? Please report it privately, as described in [SECURITY.md](SECURITY.md), rather than opening a public issue.
 
 ## Troubleshooting
 
@@ -197,7 +199,9 @@ The packages stay installed; remove them with `sudo pacman -Rns caddy dnsmasq ma
 - The TLD is fixed to `.test`.
 - Sites under `/tmp` can't be served, because the web server has a private `/tmp`.
 
-## Development
+## Contributing
+
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the rules that keep installs from breaking, and how pull requests are reviewed. Report security problems privately, as described in [SECURITY.md](SECURITY.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 ```
 bin/omarchy-herd        CLI entry point
@@ -205,16 +209,8 @@ lib/                    CLI modules: sites, php, node, services, setup, uninstal
 setup/                  root-owned parts of setup and uninstall
 dashboard/              the herd.test dashboard (plain PHP, no dependencies)
 plugin/                 the Omarchy bar widget (Quickshell/QML)
+wiki/                   source of the GitHub wiki, published on merge
 ```
-
-Lint the way CI does:
-
-```bash
-shellcheck -x bin/omarchy-herd lib/*.sh setup/*.sh install.sh
-for f in dashboard/*.php; do php -l "$f"; done
-```
-
-The bar widget only picks up QML changes after `omarchy restart shell`.
 
 ## License
 
