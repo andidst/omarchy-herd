@@ -2,7 +2,7 @@
 
 HERD_SHELL_MARKER="# omarchy-herd: project-aware php"
 HERD_DEFAULT_PHP="8.4"
-HERD_REQUIRED=(jq curl mise caddy dnsmasq mariadbd postgres valkey-server)
+HERD_REQUIRED=(jq curl mise upx caddy dnsmasq mariadbd postgres valkey-server)
 
 write_php_shim() {
   cat >"$HERD_BIN/php" <<'EOF'
@@ -111,6 +111,7 @@ cmd_setup() {
   [[ -n $(php_installed_series) ]] || php_install "$HERD_DEFAULT_PHP"
   local series
   for series in $(php_installed_series); do
+    php_unpack_installed "$series"
     php_write_fpm_conf "$series"
     php_write_wrapper "$series"
   done
@@ -199,6 +200,7 @@ cmd_doctor() {
   local series
   for series in $(php_installed_series); do
     check "PHP $series FPM running" user_unit_active "omarchy-herd-php@$series"
+    check "PHP $series binaries decompressed" php_unpacked "$series"
   done
   if ((failures == 0)); then
     echo "All good."

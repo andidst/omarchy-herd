@@ -45,7 +45,7 @@ for dir in "$run_dir" "$data_dir/log" "$caddy_data"; do
     fail "$dir must be a directory owned by $user (no symlinks); run omarchy-herd setup as $user"
 done
 
-pacman -S --needed --noconfirm caddy dnsmasq mariadb postgresql valkey jq
+pacman -S --needed --noconfirm caddy dnsmasq mariadb postgresql valkey jq upx
 
 # Shared sandbox for both services: read-only OS, no devices, kernel knobs or new privileges.
 sandbox='NoNewPrivileges=true

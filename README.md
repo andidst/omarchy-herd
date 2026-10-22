@@ -28,7 +28,7 @@ git clone https://github.com/andidst/omarchy-herd.git ~/Work/omarchy-herd
 ~/Work/omarchy-herd/install.sh
 ```
 
-The installer asks for your password once. It installs `caddy`, `dnsmasq`, `mariadb`, `postgresql` and `valkey` from the Arch repositories and sets up the always-on pieces described in [How it works](#how-it-works). Everything else runs as your user. Then it:
+The installer asks for your password once. It installs `caddy`, `dnsmasq`, `mariadb`, `postgresql`, `valkey` and `upx` from the Arch repositories and sets up the always-on pieces described in [How it works](#how-it-works). Everything else runs as your user. Then it:
 
 - downloads PHP 8.4 as the default
 - parks `~/Work` if it exists
@@ -157,7 +157,7 @@ omarchy-herd is built for a **single-user development machine**. Know what it do
 - **Root only touches system files.** The one-time root step never creates, changes or copies anything inside your home folder: it checks that the folders the web server writes to are real directories you own (no symlinks), and reads the certificate authority as you.
 - **The dashboard can change your setup.** Each change runs as a short-lived background service, so it completes even if the page reloads. The dashboard only accepts requests addressed to `herd.test` from its own page: it checks the `Host`, `Origin` and `Sec-Fetch-Site` headers, requires a custom header on every change (which other websites can't send without a CORS preflight it never answers), sends a strict Content Security Policy and can't be framed. It runs the same CLI you do, with every argument validated against an allow-list.
 - **A local certificate authority is trusted system-wide.** Its private key lives in `~/.local/share/caddy/pki`; anything able to read that folder could issue certificates your browser trusts. That is the same trade-off Herd, Valet and mkcert make. `omarchy-herd uninstall` removes the trust.
-- **PHP binaries come from static-php-cli's download server** (`dl.static-php.dev`) over HTTPS. The project doesn't publish checksums or signatures, so omarchy-herd records the SHA-256 of what it installed in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS` for later auditing.
+- **PHP binaries come from static-php-cli's download server** (`dl.static-php.dev`) over HTTPS. The project doesn't publish checksums or signatures, so omarchy-herd records the SHA-256 of the binaries as downloaded (before decompressing them) in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS` for later auditing. It then decompresses the binaries with `upx -d`, because the UPX loader they ship with crashes PHP for some argument lists.
 - **What gets served.** omarchy-herd refuses to park or link `/`, your home folder or hidden folders. In project roots without a `public/` folder, dotfiles are hidden but every other file is served, as with any static web server.
 
 Found a security problem? Please report it privately, as described in [SECURITY.md](SECURITY.md), rather than opening a public issue.
@@ -190,7 +190,7 @@ omarchy-herd uninstall           # removes services, DNS route, CA trust, PATH l
 omarchy-herd uninstall --purge   # also deletes PHP builds, settings and ALL database data
 ```
 
-The packages stay installed; remove them with `sudo pacman -Rns caddy dnsmasq mariadb postgresql valkey`.
+The packages stay installed; remove them with `sudo pacman -Rns caddy dnsmasq mariadb postgresql valkey upx`.
 
 ## Limitations
 

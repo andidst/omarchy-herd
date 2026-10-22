@@ -137,14 +137,52 @@ php_download() {
   [[ -f $tmp/php && -f $tmp/php-fpm && ! -L $tmp/php && ! -L $tmp/php-fpm ]] ||
     die "PHP $patch archive is missing php or php-fpm"
   chmod 755 "$tmp/php" "$tmp/php-fpm"
-  "$tmp/php" -n -r 'exit(0);' || die "PHP $patch doesn't run on this machine"
 
-  # static-php-cli publishes no checksums, so record what we installed for later auditing.
+  # static-php-cli publishes no checksums, so record what we downloaded for later auditing.
   (cd "$tmp" && sha256sum php php-fpm >SHA256SUMS)
+  php_unpack "$tmp/php" "$tmp/php-fpm" || die "couldn't decompress PHP $patch"
+  "$tmp/php" -n -r 'exit(0);' || die "PHP $patch doesn't run on this machine"
 
   mkdir -p "$HERD_PHP_DIR/$series"
   mv -f "$tmp/php" "$tmp/php-fpm" "$tmp/SHA256SUMS" "$HERD_PHP_DIR/$series/"
   write_atomic "$HERD_PHP_DIR/$series/VERSION" <<<"$patch"
+}
+
+# static-php-cli compresses its binaries with UPX, and the UPX loader crashes PHP at startup
+# (SIGSEGV) for some argument lists, e.g. a few hundred file paths. Decompress them in place.
+# upx exits 2 for an executable that isn't compressed and 1 for any error.
+php_unpack() {
+  command -v upx >/dev/null || die "upx isn't installed; run: omarchy-herd setup"
+  local file
+  for file in "$@"; do
+    upx -d -q -q "$file" >/dev/null 2>&1 || [[ $? == 2 ]] || return 1
+  done
+}
+
+php_unpacked() {
+  local binary
+  for binary in php php-fpm; do
+    [[ $(upx -t -q "$HERD_PHP_DIR/$1/$binary" >/dev/null 2>&1; echo $?) == 2 ]] || return 1
+  done
+}
+
+# Versions installed before php_unpack existed are still compressed. Swap in decompressed
+# copies by rename, so a running php or php-fpm keeps its old file until it restarts.
+php_unpack_installed() {
+  local series=$1 tmp binary
+  command -v upx >/dev/null || die "upx isn't installed; run: omarchy-herd setup"
+  tmp=$(mktemp -d "$HERD_PHP_DIR/.staging.XXXXXX")
+  HERD_CLEANUP+=("$tmp")
+  for binary in php php-fpm; do
+    case $(upx -t -q "$HERD_PHP_DIR/$series/$binary" >/dev/null 2>&1; echo $?) in
+    0) ;;
+    2) continue ;;
+    *) die "upx couldn't read PHP $series ($binary)" ;;
+    esac
+    cp -p "$HERD_PHP_DIR/$series/$binary" "$tmp/$binary"
+    php_unpack "$tmp/$binary" || die "couldn't decompress PHP $series ($binary)"
+    mv -f "$tmp/$binary" "$HERD_PHP_DIR/$series/$binary"
+  done
 }
 
 php_require_installed() {
