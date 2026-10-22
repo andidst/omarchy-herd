@@ -10,7 +10,9 @@ The binaries are prebuilt static builds from [static-php-cli](https://static-php
 
 Run `php -m` inside a project to see the full extension list for that version.
 
-static-php-cli publishes no checksums or signatures. omarchy-herd records the SHA-256 of what it installed in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS`, so you can compare later.
+static-php-cli publishes no checksums or signatures. omarchy-herd records the SHA-256 of the binaries as downloaded (before decompressing them) in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS`, so you can compare later.
+
+The binaries come compressed with UPX, whose loader crashes PHP at startup (SIGSEGV) for some argument lists, such as a few hundred file paths. omarchy-herd decompresses them with `upx -d` when it installs a version, and `omarchy-herd setup` decompresses versions installed before that. `omarchy-herd doctor` reports any that are still compressed.
 
 ## Installing and updating
 

@@ -69,9 +69,10 @@ PHP binaries come from static-php-cli's server, `dl.static-php.dev`, over HTTPS 
 
 - extracts only the expected `php` and `php-fpm` files from each archive, refusing symlinks,
 - checks the binary runs before installing it,
-- records the SHA-256 of what it installed in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS`, so you can compare later.
+- records the SHA-256 of the binaries as downloaded (before decompressing them) in `~/.local/share/omarchy-herd/php/<version>/SHA256SUMS`, so you can compare later,
+- decompresses the binaries with `upx` from the Arch repositories.
 
-The databases, Caddy and dnsmasq come from the Arch repositories, signed as usual.
+The databases, Caddy, dnsmasq and upx come from the Arch repositories, signed as usual.
 
 ## What gets served
 

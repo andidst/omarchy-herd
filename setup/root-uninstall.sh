@@ -24,4 +24,4 @@ if [[ -f /etc/ca-certificates/trust-source/anchors/omarchy-herd.crt ]]; then
 fi
 
 echo "System pieces removed. Packages stay installed; remove them with:"
-echo "  sudo pacman -Rns caddy dnsmasq mariadb postgresql valkey"
+echo "  sudo pacman -Rns caddy dnsmasq mariadb postgresql valkey upx"
